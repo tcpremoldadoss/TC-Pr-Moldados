@@ -24,7 +24,7 @@ Sistema interno de orçamentos, produção, clientes, produtos e financeiro da T
    ```sql
    update auth.users set raw_user_meta_data = raw_user_meta_data || '{"nome":"Pedro Henrique"}' where email = 'EMAIL_DO_PEDRO';
    ```
-4. *Project Settings → API*: copiar **Project URL** e a chave **anon public** para `supabase-config.js`.
+4. *Project Settings → API*: copiar **Project URL** e a chave **publishable** (ou anon public) para `supabase-config.js`.
 5. **Vercel** → *Add New → Project* → importar este repositório → *Framework Preset: Other* → *Deploy*.
    Cada novo commit na branch `main` publica sozinho.
 
