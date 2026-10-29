@@ -28,8 +28,11 @@ create policy "equipe cria"   on public.registros for insert to authenticated wi
 create policy "equipe altera" on public.registros for update to authenticated using (public.eh_equipe()) with check (public.eh_equipe());
 create policy "equipe apaga"  on public.registros for delete to authenticated using (public.eh_equipe());
 
+drop policy if exists "equipe le arquivos"    on storage.objects;
 drop policy if exists "equipe envia arquivos" on storage.objects;
 drop policy if exists "equipe apaga arquivos" on storage.objects;
+-- (apagar um arquivo exige também permissão de leitura)
+create policy "equipe le arquivos"    on storage.objects for select to authenticated using (bucket_id = 'arquivos' and public.eh_equipe());
 create policy "equipe envia arquivos" on storage.objects for insert to authenticated with check (bucket_id = 'arquivos' and public.eh_equipe());
 create policy "equipe apaga arquivos" on storage.objects for delete to authenticated using (bucket_id = 'arquivos' and public.eh_equipe());
 

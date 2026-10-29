@@ -33,7 +33,9 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('arquivos', 'arquivos', true, 20971520, array['image/jpeg','image/png','image/webp','application/pdf'])
 on conflict (id) do nothing;
 
+drop policy if exists "equipe le arquivos"     on storage.objects;
 drop policy if exists "equipe envia arquivos"  on storage.objects;
 drop policy if exists "equipe apaga arquivos"  on storage.objects;
+create policy "equipe le arquivos"    on storage.objects for select to authenticated using (bucket_id = 'arquivos');
 create policy "equipe envia arquivos" on storage.objects for insert to authenticated with check (bucket_id = 'arquivos');
 create policy "equipe apaga arquivos" on storage.objects for delete to authenticated using (bucket_id = 'arquivos');
