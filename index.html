@@ -485,6 +485,7 @@ function openOrcDrawer(){
   const foot=`
     <button class="btn primary" type="button" data-act="salvar-orc">Salvar</button>
     <button class="btn" type="button" data-act="wa-orc">Copiar p/ WhatsApp</button>
+    <button class="btn" type="button" data-act="pix-orc">Copiar PIX</button>
     <button class="btn" type="button" data-act="pdf-orc">Baixar PDF</button>
     <button class="btn" type="button" data-act="termo-orc" id="btn-termo" ${ehEntrada(ed.pagamento)?"":"hidden"}>Termo de compromisso</button>
     ${ed.status!=="fechado"||!temOS?`<button class="btn" type="button" data-act="fechar-orc" title="Marca como fechado e cria a ordem de serviço">Fechar e enviar à produção</button>`:""}
@@ -651,10 +652,25 @@ function textoWa(o){
   L.push(`*TOTAL: ${brl(c.total)}*`,"",`Pagamento: ${textoPag(o)}`);
   if(o.validadeDias)L.push(`Validade: ${o.validadeDias} dias (até ${fdate(addDays(o.data||today(),o.validadeDias))})`);
   if(o.observacoes)L.push("",o.observacoes);
+  const px=/^(PIX|À vista)$/.test(o.pagamento||"")||ehEntrada(o.pagamento)?pixDoOrc(o):null;
+  if(px)L.push("",`*Pagamento via PIX${px.ent?" (entrada)":""}: ${brl(px.valor)}*`,`Chave PIX: ${E.chavePix}`,"Ou copie o código abaixo e cole no app do seu banco em *PIX copia e cola*:","",px.cod);
   if(E.rodape)L.push("",E.rodape);
   L.push("",`${E.nome||"TC Pré Moldados"}${E.telefone?" · Vendas "+E.telefone:""}${E.email?" · "+E.email:""}`);
   return L.join("\n");
 }
+/* ---------- PIX copia e cola (padrão BR Code do Banco Central) ---------- */
+function pixChave(k){k=String(k||"").trim();if(!k)return "";if(k.includes("@"))return k.toLowerCase();if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k))return k.toLowerCase();if(/^[\d\s().\/+-]+$/.test(k)){const d=k.replace(/\D/g,"");return k.startsWith("+")?"+"+d:d}return k}
+function pixTxt(t,max){return String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9 ]/g,"").trim().toUpperCase().slice(0,max)}
+function pixCrc(s){let c=0xFFFF;for(let i=0;i<s.length;i++){c^=s.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=c&0x8000?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c.toString(16).toUpperCase().padStart(4,"0")}
+function pixCodigo(valor,txid){
+  const E=S.empresa||{};const k=pixChave(E.chavePix);if(!k)return null;
+  const f=(id,v)=>id+String(v.length).padStart(2,"0")+v;
+  const s="000201"+f("26",f("00","br.gov.bcb.pix")+f("01",k))+"52040000"+"5303986"+(valor>0?f("54",valor.toFixed(2)):"")+"5802BR"
+    +f("59",pixTxt(E.pixTitular||E.razaoSocial||E.nome||"TC PRE MOLDADOS",25)||"TC PRE MOLDADOS")+f("60",pixTxt(E.pixCidade||"Joao Camara",15)||"JOAO CAMARA")
+    +f("62",f("05",(pixTxt(txid,25).replace(/ /g,""))||"***"))+"6304";
+  return s+pixCrc(s);
+}
+function pixDoOrc(o){const c=calc(o);const ent=ehEntrada(o.pagamento);const valor=ent?parcelas(o).entrada:c.total;const cod=pixCodigo(valor,"ORC"+(o.numero||""));return cod?{valor,ent,cod}:null}
 async function copiar(txt,boxSel,shareSel){
   try{await navigator.clipboard.writeText(txt);toast("Texto copiado. Cole na conversa do WhatsApp.")}
   catch(e){toast("Copie o texto abaixo (selecionado).")}
@@ -975,6 +991,10 @@ function abrirEmpresa(){
   <div class="grid g2"><label class="f"><span>Telefone / WhatsApp</span><input id="e-tel" value="${esc(E.telefone||"")}"></label><label class="f"><span>CNPJ</span><input id="e-cnpj" value="${esc(E.cnpj||"")}"></label></div>
   <label class="f"><span>E-mail</span><input id="e-email" value="${esc(E.email||"")}"></label>
   <label class="f"><span>Endereço</span><input id="e-end" value="${esc(E.endereco||"")}"></label>
+  <h4 style="margin:14px 0 4px">Recebimento por PIX</h4>
+  <p class="note">Com a chave preenchida, o texto do WhatsApp sai com o PIX copia e cola já no valor do orçamento (ou da entrada). O dinheiro cai direto na conta, sem taxa.</p>
+  <label class="f"><span>Chave PIX</span><input id="e-pix" value="${esc(E.chavePix||"")}" placeholder="CNPJ, e-mail, chave aleatória ou celular com +55"></label>
+  <div class="grid g2"><label class="f"><span>Nome do titular da conta</span><input id="e-pix-tit" value="${esc(E.pixTitular||"")}" placeholder="Igual ao banco (usa a razão social se vazio)"></label><label class="f"><span>Cidade da conta</span><input id="e-pix-cid" value="${esc(E.pixCidade||"João Câmara")}"></label></div>
   <label class="f"><span>Condições padrão (rodapé do orçamento)</span><textarea id="e-rod" placeholder="Ex.: Entrega em até 5 dias úteis após confirmação. Descarga por conta do cliente.">${esc(E.rodape||"")}</textarea></label>`;
   openDrawer("Dados da empresa",body,`<button class="btn primary" type="button" data-act="salvar-empresa">Salvar</button>`);
 }
@@ -1007,6 +1027,7 @@ document.addEventListener("click",async e=>{
     case "rm-foto":{const[box,i]=id.split(":");const obj=box==="o-fotos"?ed:box==="s-fotos"?eos:eprod._proxy;const arr=obj.fotos.slice();arr.splice(+i,1);obj.fotos=arr;renderFotos(box,box+"-note",obj);break}
     case "salvar-orc":if(await salvarOrc())closeDrawer();break;
     case "fechar-orc":await fecharOrc();break;
+    case "pix-orc":{if(!(await salvarOrc(true)))return;const px=pixDoOrc(ed);if(!px){toast("Cadastre a chave PIX em Dados da empresa.",true);break}copiar(px.cod,"#o-wa","#o-share");toast(`Código PIX de ${brl(px.valor)} copiado. Cole na conversa do WhatsApp.`);break}
     case "wa-orc":if(!(await salvarOrc(true)))return;copiar(textoWa(ed),"#o-wa","#o-share");break;
     case "pdf-orc":if(!(await salvarOrc(true)))return;await gerarPdf(ed,"orc");break;
     case "termo-orc":if(!(await salvarOrc(true)))return;if(!ed.clienteId||!ed.clienteDoc||!ed.clienteEnd){toast("Para o termo, preencha nome, CPF/CNPJ e endereço de entrega do cliente.",true);return}await gerarTermo(ed);break;
@@ -1029,7 +1050,7 @@ document.addEventListener("click",async e=>{
     case "custo-tipo":ui.custoTipo=id;render();break;
     case "excluir-custo":if(!armed(t))return;try{await del("custos",id);toast("Custo excluído.")}catch(_){}break;
     case "empresa":if(dbState==="ok")abrirEmpresa();break;
-    case "salvar-empresa":{const d={nome:$("#e-nome").value.trim(),responsavel:$("#e-resp").value.trim(),razaoSocial:$("#e-razao").value.trim(),cidadeForo:S.empresa?.cidadeForo||"João Câmara/RN",telefone:$("#e-tel").value.trim(),cnpj:$("#e-cnpj").value.trim(),email:$("#e-email").value.trim(),endereco:$("#e-end").value.trim(),rodape:$("#e-rod").value};try{await db.doc("config/empresa").set(d);S.empresa=d;toast("Dados da empresa salvos.");closeDrawer()}catch(err){toast(errMsg(err),true)}break}
+    case "salvar-empresa":{const d={nome:$("#e-nome").value.trim(),responsavel:$("#e-resp").value.trim(),razaoSocial:$("#e-razao").value.trim(),cidadeForo:S.empresa?.cidadeForo||"João Câmara/RN",telefone:$("#e-tel").value.trim(),cnpj:$("#e-cnpj").value.trim(),email:$("#e-email").value.trim(),endereco:$("#e-end").value.trim(),rodape:$("#e-rod").value,chavePix:$("#e-pix").value.trim(),pixTitular:$("#e-pix-tit").value.trim(),pixCidade:$("#e-pix-cid").value.trim()};try{await db.doc("config/empresa").set(d);S.empresa=d;toast("Dados da empresa salvos.");closeDrawer()}catch(err){toast(errMsg(err),true)}break}
     case "sair":closeDrawer();try{await tcBackend.sb.auth.signOut()}catch(_){}location.reload();break;
     case "fechar-drawer":closeDrawer();break;
   }
