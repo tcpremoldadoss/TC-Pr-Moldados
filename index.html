@@ -209,6 +209,8 @@ main a,.dr-b a,.note a{color:var(--link)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--surface);padding:10px 16px;border-radius:6px;z-index:60;box-shadow:var(--shadow);max-width:calc(100% - 32px);font-size:13.5px}
 .toast.err{background:var(--bad);color:#fff}
 .banner{background:var(--accent-soft);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:13.5px}
+.aviso-os{background:#E3F3EA;border-color:#B7DEC7;margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
+.aviso-os .aviso-l{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #B7DEC7;padding-top:8px}
 @media (prefers-reduced-motion:no-preference){.drawer{animation:slide .18s ease-out}@keyframes slide{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.99.3/dist/umd/supabase.js"></script>
@@ -315,7 +317,9 @@ async function boot(){
   downloads=await tcBackend.use("downloads");
   let pending=new Set(COLS);
   COLS.forEach(c=>db.collection(c).onSnapshot(snap=>{
+    const antes=c==="os"&&dbState==="ok"?new Set(S.os.filter(o=>o.avisoPendente).map(o=>o.id)):null;
     S[c]=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(antes)S.os.filter(o=>o.avisoPendente&&!antes.has(o.id)).forEach(o=>toast(`OS ${o.numero} finalizada por ${o.finalizadaPor||"produção"} (${o.clienteNome||"—"}).`));
     pending.delete(c);if(!pending.size)dbState="ok";render();
   },e=>{toast("Erro ao carregar "+c+": "+(e.message||e.code),true)}));
   db.doc("config/empresa").onSnapshot(s=>{S.empresa=s.exists?s.data():{}},()=>{});
@@ -349,7 +353,7 @@ function render(){
   if(dbState==="loading"){m.innerHTML=`<div class="empty"><b>Carregando dados da equipe…</b>Conectando ao banco compartilhado.</div>`;return}
   if(dbState==="none"){m.innerHTML=`<div class="empty"><b>Banco de dados indisponível nesta visualização</b>Não foi possível conectar ao banco de dados. Verifique a internet e recarregue a página.</div>`;return}
   const r=route();
-  m.innerHTML=({painel:vPainel,orcamentos:vOrcamentos,producao:vProducao,clientes:vClientes,produtos:vProdutos,custos:vCustos})[r]();
+  m.innerHTML=(r==="painel"||r==="producao"?avisosOS():"")+({painel:vPainel,orcamentos:vOrcamentos,producao:vProducao,clientes:vClientes,produtos:vProdutos,custos:vCustos})[r]();
   if(r==="orcamentos")renderOrcList();
   if(r==="clientes")renderCliList();
   if(r==="custos")ligaFormCusto();
@@ -778,6 +782,39 @@ async function gerarPdf(o,tipo){
 }
 
 /* ---------- produção ---------- */
+// OS finalizadas pelo funcionário no link do WhatsApp (os.html) que ninguém do escritório viu ainda.
+function avisosOS(){
+  const l=S.os.filter(o=>o.avisoPendente).sort((a,b)=>(b.finalizadaEm||"").localeCompare(a.finalizadaEm||""));
+  if(!l.length)return "";
+  return `<div class="banner aviso-os"><b>${l.length===1?"OS finalizada pela produção":l.length+" OS finalizadas pela produção"}</b>
+    ${l.map(o=>`<div class="aviso-l"><span><span class="num">OS ${o.numero}</span> · ${esc(o.clienteNome||"—")} · por ${esc(o.finalizadaPor||"produção")} em ${fdate(o.finalizadaEm)} ${(o.finalizadaEm||"").slice(11,16)}${o.finalizadaObs?`<br><span class="sub">“${esc(o.finalizadaObs)}”</span>`:""}</span>
+    <span><button type="button" class="btn sm" data-act="abrir-os" data-id="${o.id}">Abrir</button> <button type="button" class="btn sm" data-act="ciente-os" data-id="${o.id}">Ciente</button></span></div>`).join("")}</div>`;
+}
+async function cienteOS(id){const o=byId("os",id);if(!o)return;const d=clone(o);delete d.id;d.avisoPendente=false;try{await put("os",id,d)}catch(e){}}
+const novoToken=()=>{const a="abcdefghijkmnpqrstuvwxyz23456789";let s="";crypto.getRandomValues(new Uint8Array(24)).forEach(b=>s+=a[b%a.length]);return s};
+const linkOS=o=>new URL("os.html?t="+o.token,location.href).href;
+function textoWaOS(o){
+  const L=[`*ORDEM DE SERVIÇO ${o.numero}* · TC Pré Moldados`,`Cliente: ${o.clienteNome||"—"}`,`Prazo: ${fdate(o.prazo)}`,"","*Itens:*"];
+  (o.itens||[]).forEach(i=>L.push(`• ${fnum(i.qtd)} ${i.unidade||""} ${i.descricao}`));
+  if(o.obsProducao)L.push("","*Obs.:* "+o.obsProducao);
+  L.push("","Projeto e fotos, e para avisar quando terminar, toque no link e aperte *Finalizada*:",linkOS(o));
+  return L.join("\n");
+}
+async function enviarOSWa(){
+  syncOS();
+  const tel=String(eos.responsavelTel||"").replace(/\D/g,"");
+  if(tel&&tel.length<10){toast("WhatsApp do responsável incompleto (coloque o DDD).",true);$("#s-tel").focus();return}
+  // Abre a janela antes de salvar para o celular não bloquear o WhatsApp.
+  const w=window.open("","_blank");
+  if(!eos.token)eos.token=novoToken();
+  if(eos.status==="aguardando")eos.status="produzindo";
+  eos.enviadoProducaoEm=new Date().toISOString();
+  const d=clone(eos);delete d._id;
+  try{await put("os",eos._id,d)}catch(e){if(w)w.close();return}
+  const url=(tel?waLink(tel):"https://wa.me/")+"?text="+encodeURIComponent(textoWaOS(eos));
+  if(w)w.location.href=url;else location.href=url;
+  toast(`OS ${eos.numero} enviada. Quando o funcionário finalizar, o aviso aparece aqui.`);closeDrawer();
+}
 function vProducao(){
   const hoje=today();
   const lanes=OS_ORDEM.map(s=>{
@@ -788,6 +825,7 @@ function vProducao(){
       ${l.map(o=>{const feitos=(o.itens||[]).filter(i=>i.feito).length;const late=s!=="entregue"&&o.prazo&&o.prazo<hoje;
        return `<article class="card" data-act="abrir-os" data-id="${o.id}"><div class="t"><span class="num">OS ${o.numero}</span><span class="sub">pedido #${o.orcNumero||"—"}</span></div>
        <div>${esc(o.clienteNome||"—")}</div><div class="it">${esc((o.itens||[]).map(i=>`${fnum(i.qtd)} ${i.unidade||""} ${i.descricao}`).join(" · "))}</div>
+       ${o.finalizadaPor&&s==="pronto"?`<div class="sub">✓ Finalizada por ${esc(o.finalizadaPor)}</div>`:o.token&&s==="produzindo"?`<div class="sub">Enviada pelo WhatsApp</div>`:""}
        <div class="ft"><span class="${late?"late":"sub"}">${o.prazo?(late?"Atrasada · ":"Prazo ")+fdate(o.prazo):"Sem prazo"}</span><span class="sub">${feitos}/${(o.itens||[]).length} itens${o.responsavel?" · "+esc(o.responsavel):""}</span></div>
        ${s!=="entregue"?`<div><button type="button" class="btn sm" data-act="avancar-os" data-id="${o.id}">Mover para ${OS_ST[OS_ORDEM[OS_ORDEM.indexOf(s)+1]]} →</button></div>`:""}</article>`}).join("")||`<div class="none">Nenhuma OS</div>`}
       ${extra?`<div class="none">+ ${extra} entregues antes</div>`:""}</section>`;
@@ -805,24 +843,29 @@ function abrirOS(id){
     <div><div class="sub">Cliente</div><b>${esc(o.clienteNome||"—")}</b>${cli.telefone?`<div class="sub">${esc(cli.telefone)}${wa?` · <a href="${wa}" target="_blank" rel="noopener">WhatsApp</a>`:""}</div>`:""}${cli.endereco?`<div class="sub">${esc(cli.endereco)}</div>`:""}</div>
     <div><div class="sub">Pedido de origem</div>${o.orcamentoId&&byId("orcamentos",o.orcamentoId)?`<button class="btn sm" type="button" data-act="abrir-orc" data-id="${o.orcamentoId}">Ver orçamento #${o.orcNumero}</button>`:"—"}</div>
   </div></div>
-  <div class="sec"><div class="grid g3">
+  ${o.finalizadaPor?`<div class="banner">✓ Finalizada pela produção: <b>${esc(o.finalizadaPor)}</b> em ${fdate(o.finalizadaEm)} ${(o.finalizadaEm||"").slice(11,16)}${o.finalizadaObs?`<br>“${esc(o.finalizadaObs)}”`:""}</div>`:""}
+  <div class="sec"><div class="grid g2">
     <label class="f"><span>Prazo de entrega</span><input id="s-prazo" type="date" value="${esc(eos.prazo||"")}"></label>
-    <label class="f"><span>Responsável</span><input id="s-resp" value="${esc(eos.responsavel||"")}" placeholder="Quem produz"></label>
+    <label class="f"><span>Responsável</span><input id="s-resp" list="s-resps" value="${esc(eos.responsavel||"")}" placeholder="Quem produz"><datalist id="s-resps">${Object.keys(telsProducao()).map(n=>`<option value="${esc(n)}">`).join("")}</datalist></label>
+    <label class="f"><span>WhatsApp do responsável</span><input id="s-tel" type="tel" inputmode="tel" value="${esc(eos.responsavelTel||"")}" placeholder="(84) 9 9999-9999"></label>
     <label class="f"><span>Status</span><select id="s-st">${OS_ORDEM.map(k=>`<option value="${k}" ${eos.status===k?"selected":""}>${OS_ST[k]}</option>`).join("")}</select></label>
   </div></div>
   <div class="sec"><h4>Itens a produzir (marque quando pronto)</h4>${(eos.itens||[]).map((i,n)=>`<label class="chk ${i.feito?"done":""}"><input type="checkbox" data-feito="${n}" ${i.feito?"checked":""}><span><b class="num">${fnum(i.qtd)} ${esc(i.unidade||"")}</b> ${esc(i.descricao)}<br><span class="sub">${esc(i.categoria||"")}</span></span></label>`).join("")}</div>
   <label class="f"><span>Observações de produção</span><textarea id="s-obs" placeholder="Bitolas, medidas, local de entrega, quem recebe">${esc(eos.obsProducao||"")}</textarea></label>
   <div class="sec"><h4>Fotos e projeto</h4><div class="thumbs" id="s-fotos"></div><p class="note" id="s-fotos-note"></p></div>`;
-  const foot=`<button class="btn primary" type="button" data-act="salvar-os">Salvar</button><button class="btn" type="button" data-act="pdf-os">Ficha da OS (PDF)</button><span class="sp"></span><button class="btn danger" type="button" data-act="excluir-os">Excluir</button>`;
+  const foot=`<button class="btn primary" type="button" data-act="salvar-os">Salvar</button><button class="btn" type="button" data-act="wa-os">${eos.token?"Reenviar":"Enviar"} à produção (WhatsApp)</button><button class="btn" type="button" data-act="pdf-os">Ficha da OS (PDF)</button><span class="sp"></span><button class="btn danger" type="button" data-act="excluir-os">Excluir</button>`;
   openDrawer(`OS ${o.numero}`,body,foot);
   renderFotos("s-fotos","s-fotos-note",eos);
+  $("#s-resp").addEventListener("change",()=>{const t=telsProducao()[$("#s-resp").value.trim()];if(t&&!$("#s-tel").value.trim())$("#s-tel").value=t});
   $$("[data-feito]").forEach(c=>c.addEventListener("change",()=>{eos.itens[+c.dataset.feito].feito=c.checked;c.closest(".chk").classList.toggle("done",c.checked)}));
 }
-function syncOS(){eos.prazo=$("#s-prazo").value;eos.responsavel=$("#s-resp").value.trim();const st=$("#s-st").value;if(st==="entregue"&&eos.status!=="entregue")eos.entregueEm=today();eos.status=st;eos.obsProducao=$("#s-obs").value}
-async function salvarOS(){syncOS();const d=clone(eos);delete d._id;try{await put("os",eos._id,d);toast("OS "+eos.numero+" salva.");closeDrawer()}catch(e){}}
+// Último WhatsApp usado para cada responsável, para preencher sozinho na próxima OS.
+function telsProducao(){const m={};S.os.slice().sort((a,b)=>(a.criadoEm||"").localeCompare(b.criadoEm||"")).forEach(o=>{if(o.responsavel&&o.responsavelTel)m[o.responsavel]=o.responsavelTel});return m}
+function syncOS(){eos.prazo=$("#s-prazo").value;eos.responsavel=$("#s-resp").value.trim();eos.responsavelTel=$("#s-tel").value.trim();const st=$("#s-st").value;if(st==="entregue"&&eos.status!=="entregue")eos.entregueEm=today();eos.status=st;eos.obsProducao=$("#s-obs").value}
+async function salvarOS(){syncOS();const d=clone(eos);delete d._id;d.avisoPendente=false;try{await put("os",eos._id,d);toast("OS "+eos.numero+" salva.");closeDrawer()}catch(e){}}
 async function avancarOS(id){
   const o=byId("os",id);if(!o)return;const i=OS_ORDEM.indexOf(o.status);if(i<0||i>=3)return;
-  const d=clone(o);delete d.id;d.status=OS_ORDEM[i+1];if(d.status==="entregue")d.entregueEm=today();
+  const d=clone(o);delete d.id;d.status=OS_ORDEM[i+1];d.avisoPendente=false;if(d.status==="entregue")d.entregueEm=today();
   try{await put("os",id,d);toast(`OS ${o.numero}: ${OS_ST[d.status]}.`)}catch(e){}
 }
 
@@ -1015,6 +1058,8 @@ document.addEventListener("click",async e=>{
     case "abrir-os":if(e.target.closest("[data-act=avancar-os]"))return;abrirOS(id);break;
     case "avancar-os":e.stopPropagation();await avancarOS(id);break;
     case "salvar-os":await salvarOS();break;
+    case "wa-os":await enviarOSWa();break;
+    case "ciente-os":await cienteOS(id);break;
     case "pdf-os":syncOS();await gerarPdf(eos,"os");break;
     case "excluir-os":if(!armed(t))return;try{await del("os",eos._id);toast("OS excluída.");closeDrawer()}catch(_){}break;
     case "novo-cli":abrirCli(null);break;
