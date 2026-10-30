@@ -98,6 +98,33 @@ label.f>span{text-transform:uppercase;letter-spacing:.05em}
 .bar-fill{height:100%;background:var(--accent);border-radius:2px}
 .bar-fill.cost{background:var(--warn)}
 .bar-row .v{font-family:var(--f-mono);font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right;min-width:92px}
+.chart-sum{display:flex;gap:4px 18px;flex-wrap:wrap;margin:-4px 0 12px;font-size:12.5px;color:var(--muted)}
+.chart-sum b{font-family:var(--f-mono);font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.vbars{display:flex;align-items:stretch;gap:6px;height:220px;border-bottom:1px solid var(--line)}
+.vbar{flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;border-radius:4px;outline-offset:2px}
+.vbar .vv{font-family:var(--f-mono);font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap;margin-bottom:4px}
+.vbar .vf{width:100%;max-width:56px;background:var(--accent);border-radius:4px 4px 0 0;min-height:0}
+.vbar.best .vf{background:#E0A800}
+.vbar:hover .vf,.vbar:focus-visible .vf{filter:brightness(.9)}
+.vbars.many .vv{display:none}
+@media (max-width:520px){.vbar .vv .rs{display:none}.vbar .vv{font-size:10.5px}}
+.vlabels{display:flex;gap:6px;margin-top:6px}
+.vlabels span{flex:1 1 0;min-width:0;text-align:center;font-size:11.5px;color:var(--muted);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vlabels span b{display:block;color:var(--ink);font-weight:600}
+.vtip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--ink);color:var(--surface);font-size:12px;padding:6px 9px;border-radius:6px;white-space:nowrap;z-index:5;pointer-events:none;box-shadow:var(--shadow)}
+.vbar:hover .vtip,.vbar:focus .vtip{display:block}
+.vbar:first-child .vtip{left:0;transform:none}.vbar:last-child .vtip{left:auto;right:0;transform:none}
+.pie-wrap{display:grid;grid-template-columns:minmax(0,180px) minmax(0,1fr);gap:18px;align-items:center}
+@media (max-width:480px){.pie-wrap{grid-template-columns:minmax(0,1fr)}.pie-wrap svg{max-width:200px;margin:0 auto}}
+.pie-wrap svg{width:100%;height:auto;display:block}
+.pie-wrap svg circle.sl{transition:stroke-width .12s}
+.pie-wrap svg circle.sl:hover{stroke-width:6.8}
+.pie-leg{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pie-leg div{display:grid;grid-template-columns:12px minmax(0,1fr) auto auto;gap:8px;align-items:center;font-size:13px}
+.pie-leg i{width:12px;height:12px;border-radius:3px;display:block}
+.pie-leg .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pie-leg .v{font-family:var(--f-mono);font-size:12.5px;font-variant-numeric:tabular-nums;text-align:right}
+.pie-leg .p{font-family:var(--f-mono);font-size:12px;color:var(--muted);text-align:right;min-width:38px}
 .empty{color:var(--muted);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:8px;background:var(--surface)}
 .empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
 
@@ -357,11 +384,61 @@ function render(){
 
 /* ---------- painel ---------- */
 const mesDe=o=>(o.fechadoEm||o.data||"").slice(0,7);
+const diaDe=o=>(o.fechadoEm||o.data||"").slice(0,10);
+const MES_AB=["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"];
+const fper=k=>k.length===4?"todo o ano de "+k:fmes(k);
+const brlK=n=>Math.abs(n)>=1000?"R$ "+(n/1000).toLocaleString("pt-BR",{maximumFractionDigits:1})+" mil":brl(n);
+// Cores fixas por centro de custo (segue a ordem cadastrada em Financeiro, não o ranking).
+const CORES_CENTRO=["#2a78d6","#eb6834","#1baf7a","#eda100","#e87ba4","#008300","#6250d6","#e34948"];
 function mesesDisponiveis(){
   const s=new Set([today().slice(0,7)]);
   S.orcamentos.forEach(o=>o.status==="fechado"&&mesDe(o)&&s.add(mesDe(o)));
   S.custos.forEach(c=>c.data&&s.add(c.data.slice(0,7)));
   return [...s].sort().reverse();
+}
+// Faturamento fechado agrupado por semana (seg–dom) do mês, ou por mês quando o período é o ano inteiro.
+function fatPorPeriodo(k,fech){
+  if(k.length===4){
+    return MES_AB.map((ab,i)=>{const mk=k+"-"+pad(i+1);const l=fech.filter(o=>mesDe(o)===mk);return{rot:ab,sub:"",tip:fmes(mk),v:l.reduce((s,o)=>s+calc(o).total,0),n:l.length}});
+  }
+  const [y,m]=k.split("-").map(Number);
+  const ult=new Date(y,m,0).getDate();
+  const sem=[];let cur=null;
+  for(let d=1;d<=ult;d++){
+    const dow=new Date(y,m-1,d).getDay();
+    if(!cur||dow===1){cur={ini:d,fim:d};sem.push(cur)}
+    cur.fim=d;
+  }
+  return sem.map((w,i)=>{
+    const l=fech.filter(o=>{const dd=+diaDe(o).slice(8,10);return dd>=w.ini&&dd<=w.fim});
+    const per=pad(w.ini)+(w.fim!==w.ini?"–"+pad(w.fim):"")+"/"+pad(m);
+    return{rot:"Sem "+(i+1),sub:per,tip:"Semana "+(i+1)+" ("+per+")",v:l.reduce((s,o)=>s+calc(o).total,0),n:l.length};
+  });
+}
+function graficoBarras(dados,k){
+  const max=Math.max(...dados.map(x=>x.v));
+  const tot=dados.reduce((s,x)=>s+x.v,0);
+  if(!tot)return `<div class="note">Nenhum pedido fechado em ${esc(fper(k))}.</div>`;
+  const melhor=dados.reduce((a,b)=>b.v>a.v?b:a);
+  const unid=k.length===4?"mês":"semana";
+  const ativos=k.length===4?dados.filter((x,i)=>k+"-"+pad(i+1)<=today().slice(0,7)).length||12:dados.length;
+  return `<div class="chart-sum"><span>Total <b>${brl(tot)}</b></span><span>Média por ${unid} <b>${brl(tot/ativos)}</b></span><span>Melhor ${unid} <b>${esc(melhor.tip)}</b></span></div>
+  <div class="vbars${dados.length>6?" many":""}" role="img" aria-label="Faturamento por ${unid} em ${esc(fper(k))}">${dados.map(x=>`<div class="vbar${x===melhor?" best":""}" tabindex="0"><span class="vtip">${esc(x.tip)}: <b>${brl(x.v)}</b> · ${x.n} pedido${x.n===1?"":"s"}</span>${x.v?`<span class="vv"><span class="rs">R$ </span>${brlK(x.v).replace("R$ ","")}</span>`:""}<div class="vf" style="height:${max?(100*x.v/max*0.86).toFixed(1):0}%"></div></div>`).join("")}</div>
+  <div class="vlabels">${dados.map(x=>`<span><b>${esc(x.rot)}</b>${esc(x.sub)}</span>`).join("")}</div>`;
+}
+function graficoPizza(custos){
+  const pc={};custos.forEach(c=>{const n=c.centro||"Sem centro";pc[n]=(pc[n]||0)+pnum(c.valor)});
+  const tot=Object.values(pc).reduce((a,b)=>a+b,0);
+  if(!tot)return `<div class="note">Nenhum custo lançado no período. <a href="#custos">Lançar custos</a></div>`;
+  const ordem=fin().centros.slice();Object.keys(pc).forEach(n=>{if(!ordem.includes(n))ordem.push(n)});
+  const cor=n=>{const i=ordem.indexOf(n);return i<CORES_CENTRO.length?CORES_CENTRO[i]:"#8a8a86"};
+  const fatias=Object.entries(pc).filter(x=>x[1]>0).sort((a,b)=>b[1]-a[1]);
+  const R=15.9155,gap=fatias.length>1?0.6:0;let acc=0;
+  const arcos=fatias.map(([n,v])=>{const p=100*v/tot;const a=`<circle class="sl" cx="21" cy="21" r="${R}" fill="none" stroke="${cor(n)}" stroke-width="5.5" stroke-dasharray="${Math.max(0,p-gap).toFixed(3)} ${(100-Math.max(0,p-gap)).toFixed(3)}" stroke-dashoffset="${(25-acc).toFixed(3)}"><title>${esc(n)}: ${brl(v)} (${p.toLocaleString("pt-BR",{maximumFractionDigits:1})}%)</title></circle>`;acc+=p;return a}).join("");
+  return `<div class="pie-wrap"><svg viewBox="0 0 42 42" role="img" aria-label="Custos por centro de custo"><circle cx="21" cy="21" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="5.5"/>${arcos}
+    <text x="21" y="20" text-anchor="middle" font-size="3.2" fill="var(--muted)" font-family="IBM Plex Sans,sans-serif">Total</text>
+    <text x="21" y="24.6" text-anchor="middle" font-size="3.3" fill="var(--ink)" font-family="IBM Plex Mono,monospace">${esc(brlK(tot))}</text></svg>
+    <div class="pie-leg">${fatias.map(([n,v])=>`<div><i style="background:${cor(n)}"></i><span class="n" title="${esc(n)}">${esc(n)}</span><span class="v">${brl(v)}</span><span class="p">${Math.round(100*v/tot)}%</span></div>`).join("")}</div></div>`;
 }
 function vPainel(){
   const meses=mesesDisponiveis();
@@ -370,8 +447,10 @@ function vPainel(){
     const temCur=S.orcamentos.some(o=>o.status==="fechado"&&mesDe(o)===cur);
     ui.mes=temCur?cur:(meses.find(k=>S.orcamentos.some(o=>o.status==="fechado"&&mesDe(o)===k))||cur);
   }
-  const k=ui.mes;
-  const fech=S.orcamentos.filter(o=>o.status==="fechado"&&mesDe(o)===k);
+  const k=ui.mes,ano=k.slice(0,4);
+  const anos=[...new Set(meses.map(m=>m.slice(0,4)))].sort().reverse();
+  const mesesAno=MESES.map((_,i)=>ano+"-"+pad(i+1)).filter(m=>m<=today().slice(0,7)||meses.includes(m));
+  const fech=S.orcamentos.filter(o=>o.status==="fechado"&&mesDe(o).startsWith(k));
   const fat=fech.reduce((s,o)=>s+calc(o).total,0);
   const custos=S.custos.filter(c=>(c.data||"").startsWith(k)&&ehCusto(c));
   const cst=custos.reduce((s,c)=>s+pnum(c.valor),0);
@@ -391,25 +470,31 @@ function vPainel(){
   const maxK=Math.max(1,...clis.map(x=>x[1]));
   const osAt=OS_ORDEM.slice(0,3).map(s=>[s,S.os.filter(o=>o.status===s).length]);
   const atrasadas=S.os.filter(o=>o.status!=="entregue"&&o.prazo&&o.prazo<today()).length;
+  const noPer=k.length===4?"no ano":"no mês";
   return `
-  <div class="head"><div><h2>Painel</h2><p>Resultado de ${esc(fmes(k))}</p></div>
-    <div class="tools"><select id="sel-mes" aria-label="Mês">${meses.map(m=>`<option value="${m}" ${m===k?"selected":""}>${esc(fmes(m))}</option>`).join("")}</select>
+  <div class="head"><div><h2>Painel</h2><p>Resultado de ${esc(fper(k))}</p></div>
+    <div class="tools"><select id="sel-ano" aria-label="Ano" style="width:auto">${anos.map(a=>`<option value="${a}" ${a===ano?"selected":""}>${a}</option>`).join("")}</select>
+    <select id="sel-mes" aria-label="Mês" style="width:auto"><option value="${ano}" ${k===ano?"selected":""}>Ano inteiro</option>${mesesAno.map(m=>`<option value="${m}" ${m===k?"selected":""}>${esc(MESES[+m.slice(5)-1])}</option>`).join("")}</select>
     <button class="btn primary" data-act="novo-orc" type="button">+ Novo orçamento</button></div></div>
   <div class="kpis">
-    <div class="kpi"><span class="l">Faturamento fechado</span><span class="v">${brl(fat)}</span><span class="s">${fech.length} pedido${fech.length===1?"":"s"} no mês</span></div>
+    <div class="kpi"><span class="l">Faturamento fechado</span><span class="v">${brl(fat)}</span><span class="s">${fech.length} pedido${fech.length===1?"":"s"} ${noPer}</span></div>
     <div class="kpi"><span class="l">Custos lançados</span><span class="v">${brl(cst)}</span><span class="s">${custos.length} lançamento${custos.length===1?"":"s"}</span></div>
-    <div class="kpi ${cst? (res>=0?"pos":"neg"):""}"><span class="l">Resultado do mês</span><span class="v">${cst?brl(res):"—"}</span><span class="s">${cst?(fat?Math.round(100*res/fat)+"% do faturamento":""):"Lance os custos para ver a margem"}</span></div>
+    <div class="kpi ${cst? (res>=0?"pos":"neg"):""}"><span class="l">Resultado ${k.length===4?"do ano":"do mês"}</span><span class="v">${cst?brl(res):"—"}</span><span class="s">${cst?(fat?Math.round(100*res/fat)+"% do faturamento":""):"Lance os custos para ver a margem"}</span></div>
     <div class="kpi"><span class="l">Orçamentos em aberto</span><span class="v">${brl(vAb)}</span><span class="s">${abertos.length} aguardando resposta${conv!==null?` · conversão ${conv}%`:""}</span></div>
   </div>
   <div class="cols2">
-    <div class="panel"><h3>Faturamento por produto</h3>${cats.length?`<div class="bars">${cats.map(([n,v])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(100*v/maxC).toFixed(1)}%"></div></div><span class="v">${brl(v)}</span></div>`).join("")}</div>`:`<div class="note">Nenhum pedido fechado neste mês.</div>`}</div>
+    <div class="panel"><h3>Faturamento por ${k.length===4?"mês":"semana"}</h3>${graficoBarras(fatPorPeriodo(k,fech),k)}</div>
+    <div class="panel"><h3>Custos por centro de custo</h3>${graficoPizza(custos)}<p class="note" style="margin:12px 0 0">Custos diretos e indiretos. Retiradas e despesas pessoais dos sócios ficam de fora.</p></div>
+  </div>
+  <div class="cols2">
+    <div class="panel"><h3>Produtos mais vendidos</h3>${cats.length?`<p class="note" style="margin:-6px 0 12px">Mais vendido ${noPer}: <b style="color:var(--ink)">${esc(cats[0][0])}</b> (${Math.round(100*cats[0][1]/cats.reduce((s,x)=>s+x[1],0))}% do faturamento)</p><div class="bars">${cats.map(([n,v])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(100*v/maxC).toFixed(1)}%"></div></div><span class="v">${brl(v)}</span></div>`).join("")}</div>`:`<div class="note">Nenhum pedido fechado ${noPer}.</div>`}</div>
     <div class="panel"><h3>Produção agora</h3>
       <div class="bars">${osAt.map(([s,n])=>`<div class="bar-row"><span class="n">${OS_ST[s]}</span><div class="bar-track"><div class="bar-fill" style="width:${S.os.length?(100*n/Math.max(1,...osAt.map(x=>x[1]))):0}%"></div></div><span class="v">${n} OS</span></div>`).join("")}</div>
       <p class="note" style="margin:12px 0 0">${atrasadas?`<span class="late">${atrasadas} OS com prazo vencido.</span> `:""}<a href="#producao">Abrir quadro de produção</a></p>
     </div>
   </div>
   <div class="cols2">
-    <div class="panel"><h3>Maiores clientes do mês</h3>${clis.length?`<div class="bars">${clis.map(([n,v])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(100*v/maxK).toFixed(1)}%"></div></div><span class="v">${brl(v)}</span></div>`).join("")}</div>`:`<div class="note">Sem vendas no mês.</div>`}</div>
+    <div class="panel"><h3>Maiores clientes ${k.length===4?"do ano":"do mês"}</h3>${clis.length?`<div class="bars">${clis.map(([n,v])=>`<div class="bar-row"><span class="n" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(100*v/maxK).toFixed(1)}%"></div></div><span class="v">${brl(v)}</span></div>`).join("")}</div>`:`<div class="note">Sem vendas ${noPer}.</div>`}</div>
     <div class="panel"><h3>Últimos orçamentos</h3>${orcMiniList(S.orcamentos.slice().sort((a,b)=>(b.criadoEm||b.data||"").localeCompare(a.criadoEm||a.data||"")).slice(0,6))}</div>
   </div>`;
 }
@@ -1040,6 +1125,7 @@ document.addEventListener("input",e=>{
 });
 document.addEventListener("change",e=>{
   if(e.target.id==="sel-mes"){ui.mes=e.target.value;render()}
+  if(e.target.id==="sel-ano"){const a=e.target.value;ui.mes=ui.mes.length===4?a:a+ui.mes.slice(4);if(ui.mes>today().slice(0,7)&&!mesesDisponiveis().includes(ui.mes))ui.mes=a;render()}
   if(e.target.id==="sel-custo-mes"){ui.custoMes=e.target.value;render()}
 });
 document.addEventListener("submit",async e=>{
