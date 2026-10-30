@@ -13,8 +13,8 @@ Sistema interno de orçamentos, produção, clientes, produtos e financeiro da T
 | `backend.js` | Ligação com o Supabase (dados em tempo real, fotos, downloads) |
 | `supabase-config.js` | URL e chave **pública** (anon) do Supabase |
 | `supabase/schema.sql` | Cria a tabela, as regras de acesso e o bucket de fotos |
-| `os.html` | Página do funcionário da produção: abre pelo link da OS no WhatsApp e marca a OS como finalizada |
-| `supabase/os-whatsapp.sql` | Funções que deixam o link da OS ver e finalizar só aquela OS (rodar uma vez) |
+| `os.html` | Página do funcionário da produção: abre pelo link da OS no WhatsApp e marca a OS como iniciada e finalizada |
+| `supabase/os-whatsapp.sql` | Funções que deixam o link da OS ver, iniciar e finalizar só aquela OS (rodar uma vez) |
 | `supabase/seed.sql` | Dados migrados do protótipo (setembro/2026, clientes, produtos, centros de custo e categorias) |
 
 ## Configuração (uma vez)
@@ -32,8 +32,13 @@ Sistema interno de orçamentos, produção, clientes, produtos e financeiro da T
 
 ## OS pelo WhatsApp
 
-Na OS, preencha o responsável e o WhatsApp dele e clique em **Enviar à produção (WhatsApp)**. A mensagem vai pronta com
-os itens e um link exclusivo daquela OS. Quando o funcionário aperta **Finalizada** no link, a OS passa para
-"Pronto p/ entrega" e aparece um aviso verde no Painel e na Produção. Precisa ter rodado `supabase/os-whatsapp.sql` uma vez.
+1. Em **Dados da empresa → Funcionários da produção**, cadastre nome e WhatsApp de cada funcionário.
+2. Na OS, escolha o responsável e clique em **Enviar à produção (WhatsApp)**. A mensagem vai pronta com os itens
+   e um link exclusivo daquela OS.
+3. No link, o funcionário aperta **Iniciei a produção** (a OS vai para "Em produção") e depois **Finalizada**
+   (vai para "Pronto p/ entrega"). Aparece um aviso verde no Painel e na Produção.
+4. No aviso, **Avisar cliente (WhatsApp)** abre a conversa com o cliente com uma de 3 mensagens prontas.
+
+Precisa ter rodado `supabase/os-whatsapp.sql` uma vez (rode de novo depois de atualizar o arquivo).
 
 Nunca coloque no código a chave `service_role` nem a senha do banco.

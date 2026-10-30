@@ -69,7 +69,7 @@ let nomeSalvo="";try{nomeSalvo=localStorage.getItem("tc-os-nome")||""}catch(_){}
 function mostraErro(msg){$("#main").innerHTML=`<div class="card"><h2>Não foi possível abrir</h2><p class="erro">${esc(msg)}</p><p class="sub">Peça ao escritório para enviar o link da OS de novo.</p></div>`}
 
 function mostra(o){
-  const fim=o.status==="pronto"||o.status==="entregue";
+  const fim=o.status==="pronto"||o.status==="entregue",ini=!fim&&o.status!=="aguardando";
   const fotos=(o.fotos||[]).filter(f=>f&&f.id);
   document.title=`OS ${o.numero} · TC Pré Moldados`;
   $("#main").innerHTML=`
@@ -78,20 +78,21 @@ function mostra(o){
     <h1 class="num">OS ${esc(o.numero)}</h1>
     <div style="margin-top:6px"><b>${esc(o.clienteNome||"—")}</b></div>
     <div class="sub">Prazo: ${fdate(o.prazo)}${o.responsavel?" · Responsável: "+esc(o.responsavel):""}</div>
-    <div style="margin-top:8px"><span class="status${fim?" ok":""}">${fim?"Finalizada":"Em produção"}</span></div>
+    <div style="margin-top:8px"><span class="status${fim?" ok":""}">${fim?"Finalizada":ini?"Em produção":"Aguardando início"}</span>${ini&&o.iniciadaPor?` <span class="sub">iniciada por ${esc(o.iniciadaPor)} · ${fhora(o.iniciadaEm)}</span>`:""}</div>
   </div>
   <div class="card"><b>Itens a produzir</b><ul>${(o.itens||[]).map(i=>`<li><b class="num">${fnum(i.qtd)} ${esc(i.unidade||"")}</b> ${esc(i.descricao)}</li>`).join("")||"<li class='sub'>Sem itens</li>"}</ul></div>
   ${o.obsProducao?`<div class="card"><b>Observações</b><div class="obs">${esc(o.obsProducao)}</div></div>`:""}
   ${fotos.length?`<div class="card"><b>Fotos e projeto</b><div class="fotos">${fotos.map(f=>`<a href="${fotoUrl(f.id)}" target="_blank" rel="noopener">${(f.tipo||"").startsWith("image/")?`<img src="${fotoUrl(f.id)}" alt="${esc(f.nome||"foto")}" loading="lazy">`:"Abrir PDF"}</a>`).join("")}</div></div>`:""}
   ${fim?`<div class="card feito"><h2>OS finalizada</h2><div class="sub">${o.finalizadaPor?"Por "+esc(o.finalizadaPor)+" · ":""}${fhora(o.finalizadaEm)}</div><div class="sub">O escritório já foi avisado.</div></div>`:`
   <div class="card" style="display:flex;flex-direction:column;gap:12px">
-    <b>Terminou a produção?</b>
-    <label>Seu nome<input id="nome" autocomplete="name" value="${esc(nomeSalvo||o.responsavel||"")}" placeholder="Quem produziu"></label>
-    <label>Observação (opcional)<textarea id="obs" placeholder="Ex.: faltou 1 barra, ficou no pátio 2"></textarea></label>
-    <button class="btn" id="fin" type="button">✓ Marcar OS ${esc(o.numero)} como finalizada</button>
+    <b>${ini?"Terminou a produção?":"Vai começar a produzir?"}</b>
+    <label>Seu nome<input id="nome" autocomplete="name" value="${esc(nomeSalvo||o.responsavel||"")}" placeholder="Quem produz"></label>
+    ${ini?`<label>Observação (opcional)<textarea id="obs" placeholder="Ex.: faltou 1 barra, ficou no pátio 2"></textarea></label>
+    <button class="btn" id="fin" type="button">✓ Marcar OS ${esc(o.numero)} como finalizada</button>`:`<button class="btn" id="ini" type="button">▶ Iniciei a produção</button>`}
     <p class="erro" id="err" hidden></p>
   </div>`}`;
-  const b=$("#fin");if(b)b.addEventListener("click",finalizar);
+  const b=$("#fin");if(b)b.addEventListener("click",()=>envia("os_finalizar_por_link"));
+  const bi=$("#ini");if(bi)bi.addEventListener("click",()=>envia("os_iniciar_por_link"));
 }
 
 async function carrega(){
@@ -103,12 +104,12 @@ async function carrega(){
   mostra(data);
 }
 
-async function finalizar(){
-  const b=$("#fin"),nome=$("#nome").value.trim(),obs=$("#obs").value.trim();
+async function envia(fn){
+  const b=$("#fin")||$("#ini"),nome=$("#nome").value.trim(),obs=$("#obs")?$("#obs").value.trim():"";
   if(!nome){$("#err").textContent="Escreva seu nome.";$("#err").hidden=false;$("#nome").focus();return}
   b.disabled=true;b.textContent="Enviando…";
   try{localStorage.setItem("tc-os-nome",nome)}catch(_){}
-  const {data,error}=await sb.rpc("os_finalizar_por_link",{p_token:token,p_nome:nome,p_obs:obs});
+  const {data,error}=await sb.rpc(fn,fn==="os_iniciar_por_link"?{p_token:token,p_nome:nome}:{p_token:token,p_nome:nome,p_obs:obs});
   if(error||!data){b.disabled=false;b.textContent="Tentar de novo";$("#err").textContent="Não foi possível enviar. Verifique a internet e tente de novo.";$("#err").hidden=false;return}
   mostra(data);window.scrollTo(0,document.body.scrollHeight);
 }
